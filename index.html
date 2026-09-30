@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASTRA // Asteroids</title>
+  <style>
+:root { --ink: #e9eff4; --muted: #7e96a7; --cyan: #65f4d7; --orange: #ff734f; --navy: #07121d; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; color: var(--ink); background: radial-gradient(circle at 50% 10%, #172d40 0, #091420 45%, #04090f 100%); font-family: 'Space Mono', monospace; display: grid; place-items: center; }
+.game-shell { width: min(1120px, 94vw); padding: 28px 0 20px; }
+.hud { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin: 0 22px 16px; text-transform: uppercase; }
+.brand { font: 700 25px 'Syncopate', sans-serif; letter-spacing: 4px; color: var(--cyan); text-shadow: 0 0 18px #32bca5; }.brand-mark { font-size: 18px; vertical-align: 3px; }
+.score-block { text-align: center; line-height: 1; }.score-block span, .lives > span { display:block; font-size: 9px; letter-spacing: 2px; color: var(--muted); margin-bottom: 7px; }.score-block strong { font-size: 22px; letter-spacing: 3px; }
+.lives { justify-self: end; text-align: right; } #life-icons { display:flex; gap:7px; justify-content:end; }.life { width:15px; height:15px; background:var(--orange); clip-path: polygon(50% 0, 100% 100%, 50% 75%, 0 100%); }
+.arena-wrap { position:relative; aspect-ratio: 8 / 5; border:1px solid #315065; box-shadow: 0 0 0 5px rgba(85, 163, 179, .08), 0 22px 70px #000b; overflow:hidden; background:#06111b; }
+canvas { display:block; width:100%; height:100%; }.scanlines { pointer-events:none; position:absolute; inset:0; opacity:.14; background:repeating-linear-gradient(0deg, transparent 0 3px, #c9edff 4px); mix-blend-mode:overlay; }
+.overlay { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; background:linear-gradient(90deg, rgba(3,10,16,.32), rgba(3,10,16,.04), rgba(3,10,16,.32)); }.hidden { display:none; }
+.eyebrow { color:var(--cyan); letter-spacing:4px; font-size:10px; margin:0 0 16px; }.overlay h1 { font:700 clamp(36px, 7vw, 80px)/1 'Syncopate', sans-serif; letter-spacing:7px; margin:0; color:#f2f8f9; text-shadow:4px 4px 0 #1a7180, 0 0 22px #9cfff6; }.intro { color:#bdcbd2; font-size:12px; letter-spacing:2px; line-height:1.8; margin:25px 0; }.intro strong { color:var(--orange); }
+button { color:#031018; background:var(--cyan); border:0; font:700 12px 'Space Mono', monospace; letter-spacing:2px; padding:15px 19px; cursor:pointer; box-shadow:5px 5px 0 #176b72; transition: transform .15s, box-shadow .15s; } button:hover { transform:translate(2px,2px); box-shadow:3px 3px 0 #176b72; } button span { font-size:18px; margin-left:8px; }.controls { position:absolute; bottom:20px; font-size:9px; color:#8298a5; letter-spacing:1px; }
+footer { display:flex; justify-content:space-between; margin:17px 22px 0; color:#6d8595; font-size:9px; letter-spacing:1px; } footer b { color:var(--cyan); }
+@media (max-width:600px) { .game-shell { width:100%; padding-top:17px; }.hud { margin:0 13px 13px; }.brand { font-size:17px; letter-spacing:2px; }.score-block strong { font-size:17px; }.arena-wrap { border-left:0; border-right:0; }.controls { display:none; } footer { margin-inline:13px; font-size:7px; }.overlay h1 { letter-spacing:3px; } }
+
+  </style>
+</head>
+<body>
+  <main class="game-shell">
+    <header class="hud">
+      <div class="brand"><span class="brand-mark">✦</span> ASTRA</div>
+      <div class="score-block"><span>SECTOR SCORE</span><strong id="score">000000</strong></div>
+      <div class="lives" aria-label="Lives remaining"><span>HULLS</span><div id="life-icons"></div></div>
+    </header>
+
+    <section class="arena-wrap" aria-label="Asteroids game">
+      <canvas id="game" width="960" height="600"></canvas>
+      <div class="scanlines"></div>
+      <div id="start-screen" class="overlay">
+        <p class="eyebrow">OUTER ORBIT // 01</p>
+        <h1>ASTEROIDS</h1>
+        <p class="intro">NAVIGATE THE DEBRIS FIELD.<br>LEAVE NO ROCK UNBROKEN.</p>
+        <button id="start-button">START MISSION <span>↗</span></button>
+        <p class="controls">[ ← ↑ → ] STEER &nbsp; · &nbsp; [ SPACE ] FIRE &nbsp; · &nbsp; [ SHIFT ] WARP</p>
+      </div>
+      <div id="game-over" class="overlay hidden">
+        <p class="eyebrow">SIGNAL LOST</p>
+        <h1>MISSION OVER</h1>
+        <p class="intro">FINAL SCORE <strong id="final-score">000000</strong></p>
+        <button id="restart-button">TRY AGAIN <span>↻</span></button>
+      </div>
+    </section>
+
+    <footer>
+      <span>SYS.STATUS: <b>ONLINE</b></span>
+      <span>HIGH SCORE <b id="high-score">000000</b></span>
+      <span>V1.0 // DEEP SPACE DEFENSE</span>
+    </footer>
+  </main>
+  <script>
+const canvas = document.querySelector('#game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const scoreEl = document.querySelector('#score'), highScoreEl = document.querySelector('#high-score');
+const startScreen = document.querySelector('#start-screen'), overScreen = document.querySelector('#game-over');
+const keys = {};
+// Initialise render collections so the start screen safely animates before a mission begins.
+let ship = null, rocks = [], bullets = [], particles = [], score = 0, lives = 0, playing = false, spawnTimer = 0;
+let high = Number(localStorage.getItem('astra-high') || 0); highScoreEl.textContent = String(high).padStart(6, '0');
+const stars = Array.from({length: 130}, () => ({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.5+.25,a:Math.random()}));
+addEventListener('keydown', e => { keys[e.code] = true; if(['ArrowUp','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault(); });
+addEventListener('keyup', e => keys[e.code] = false);
+function reset() { ship={x:W/2,y:H/2,a:-Math.PI/2,vx:0,vy:0,inv:150}; rocks=[]; bullets=[]; particles=[]; score=0; lives=3; spawnTimer=0; playing=true; updateHud(); for(let i=0;i<5;i++) addRock(3); }
+function addRock(size=3,x,y) { const r=size*15+Math.random()*8, points=8+Math.floor(Math.random()*5); rocks.push({x:x??Math.random()*W,y:y??Math.random()*H,vx:(Math.random()-.5)*(1.3+(3-size)*.4),vy:(Math.random()-.5)*(1.3+(3-size)*.4),r,size,a:Math.random()*6.28,spin:(Math.random()-.5)*.025,shape:Array.from({length:points},()=>.75+Math.random()*.45)}); }
+function updateHud(){ scoreEl.textContent=String(score).padStart(6,'0'); document.querySelector('#life-icons').innerHTML=Array.from({length:lives},()=>'<i class="life"></i>').join(''); }
+function wrap(o){ o.x=(o.x+W)%W; o.y=(o.y+H)%H; }
+function burst(x,y,color,n=12){ for(let i=0;i<n;i++){let a=Math.random()*6.28,s=Math.random()*3+1;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:25+Math.random()*25,color});}}
+function shoot(){ if(ship.cooldown>0)return; ship.cooldown=11; bullets.push({x:ship.x+Math.cos(ship.a)*15,y:ship.y+Math.sin(ship.a)*15,vx:ship.vx+Math.cos(ship.a)*8,vy:ship.vy+Math.sin(ship.a)*8,life:52}); }
+function die(){ if(ship.inv>0)return; burst(ship.x,ship.y,'#ff734f',32); lives--; updateHud(); if(!lives){ playing=false; document.querySelector('#final-score').textContent=String(score).padStart(6,'0'); overScreen.classList.remove('hidden'); } else { ship.x=W/2;ship.y=H/2;ship.vx=ship.vy=0;ship.inv=150; } }
+function update(){ if(!playing)return; spawnTimer++; if(spawnTimer>560){addRock(3);spawnTimer=0;} if(keys.ArrowLeft)ship.a-=.075;if(keys.ArrowRight)ship.a+=.075;if(keys.ArrowUp){ship.vx+=Math.cos(ship.a)*.16;ship.vy+=Math.sin(ship.a)*.16;particles.push({x:ship.x-Math.cos(ship.a)*13,y:ship.y-Math.sin(ship.a)*13,vx:-Math.cos(ship.a)*1.3+(Math.random()-.5),vy:-Math.sin(ship.a)*1.3+(Math.random()-.5),life:14,color:'#65f4d7'});} if(keys.Space)shoot(); if(keys.ShiftLeft||keys.ShiftRight){ship.x=Math.random()*W;ship.y=Math.random()*H;keys.ShiftLeft=keys.ShiftRight=false;} ship.x+=ship.vx;ship.y+=ship.vy;ship.vx*=.992;ship.vy*=.992;ship.inv--;ship.cooldown=(ship.cooldown||0)-1;wrap(ship);
+ bullets.forEach(b=>{b.x+=b.vx;b.y+=b.vy;b.life--;wrap(b);}); bullets=bullets.filter(b=>b.life>0); rocks.forEach(r=>{r.x+=r.vx;r.y+=r.vy;r.a+=r.spin;wrap(r);}); particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.life--;});particles=particles.filter(p=>p.life>0);
+ for(const b of bullets) for(const r of rocks) if(!r.dead&&Math.hypot(b.x-r.x,b.y-r.y)<r.r){r.dead=true;b.life=0;score+=r.size*25;burst(r.x,r.y,'#e9eff4',r.size*7);if(r.size>1){addRock(r.size-1,r.x,r.y);addRock(r.size-1,r.x,r.y);}}
+ rocks=rocks.filter(r=>!r.dead); for(const r of rocks)if(Math.hypot(ship.x-r.x,ship.y-r.y)<r.r+9)die(); if(score>high){high=score;localStorage.setItem('astra-high',high);highScoreEl.textContent=String(high).padStart(6,'0');}updateHud(); }
+function draw(){ctx.fillStyle='#06111b';ctx.fillRect(0,0,W,H); stars.forEach(s=>{ctx.globalAlpha=.25+s.a*.65;ctx.fillStyle='#c9ecff';ctx.fillRect(s.x,s.y,s.r,s.r);});ctx.globalAlpha=1; particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life/45);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,2,2);});ctx.globalAlpha=1;ctx.strokeStyle='#d5e4e9';ctx.lineWidth=1.7;rocks.forEach(r=>{ctx.save();ctx.translate(r.x,r.y);ctx.rotate(r.a);ctx.beginPath();r.shape.forEach((v,i)=>{let a=i/r.shape.length*6.28, d=r.r*v;i?ctx.lineTo(Math.cos(a)*d,Math.sin(a)*d):ctx.moveTo(Math.cos(a)*d,Math.sin(a)*d);});ctx.closePath();ctx.stroke();ctx.restore();});ctx.strokeStyle='#65f4d7';bullets.forEach(b=>{ctx.beginPath();ctx.moveTo(b.x-b.vx,b.y-b.vy);ctx.lineTo(b.x,b.y);ctx.stroke();});if(playing&&(ship.inv%12<8)){ctx.save();ctx.translate(ship.x,ship.y);ctx.rotate(ship.a);ctx.strokeStyle='#65f4d7';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(16,0);ctx.lineTo(-11,-10);ctx.lineTo(-6,0);ctx.lineTo(-11,10);ctx.closePath();ctx.stroke();ctx.restore();}requestAnimationFrame(loop);}
+function loop(){update();draw();} document.querySelector('#start-button').onclick=()=>{startScreen.classList.add('hidden');reset();};document.querySelector('#restart-button').onclick=()=>{overScreen.classList.add('hidden');reset();};requestAnimationFrame(loop);
+
+  </script>
+</body>
+</html>
